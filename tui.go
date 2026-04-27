@@ -363,6 +363,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == modeNormal && len(m.messages) > 0 {
 				m.mode = modeSelect
 				m.selectIdx = len(m.messages) - 1
+				m.autoScroll = false
 				m.input.Blur()
 				m.recalcViewport()
 				m.viewport.SetContent(m.renderMessages())
@@ -444,9 +445,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		newMsgs := []ChatMessage(msg)
 		m.mergeMessages(newMsgs)
-		m.viewport.SetContent(m.renderMessages())
-		if m.autoScroll {
-			m.viewport.GotoBottom()
+		if m.mode == modeSelect {
+			savedOffset := m.viewport.YOffset
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.YOffset = savedOffset
+			m.scrollToSelected()
+		} else {
+			m.viewport.SetContent(m.renderMessages())
+			if m.autoScroll {
+				m.viewport.GotoBottom()
+			}
 		}
 
 	case sentMsg:
