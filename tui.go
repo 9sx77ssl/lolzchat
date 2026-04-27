@@ -103,10 +103,17 @@ var (
 )
 
 var (
+	// Matches an explicit "color: #hex" CSS property.
 	renderedColorRe = regexp.MustCompile(`color:\s*#([0-9a-fA-F]{3,8})`)
-	renderedRGBRe   = regexp.MustCompile(`color:\s*rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)`)
-	anyHexColorRe   = regexp.MustCompile(`#([0-9a-fA-F]{6})`)
-	rainbowColors   = []lipgloss.Color{
+	// Matches an explicit "color: rgb(r,g,b)" CSS property.
+	renderedRGBRe = regexp.MustCompile(`color:\s*rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)`)
+	// Matches an explicit "color: rgba(r,g,b,a)" CSS property.
+	renderedRGBARe = regexp.MustCompile(`color:\s*rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*[\d.]+\s*\)`)
+	// Matches any #RRGGBB hex color anywhere in the HTML.
+	anyHexColorRe = regexp.MustCompile(`#([0-9a-fA-F]{6})`)
+	// Matches any rgba(...) occurrence anywhere in the HTML (for gradient backgrounds).
+	anyRGBAColorRe = regexp.MustCompile(`rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*[\d.]+\s*\)`)
+	rainbowColors  = []lipgloss.Color{
 		"196", "214", "226", "46", "51", "93",
 	}
 )
@@ -131,16 +138,52 @@ func isUniq(user ChatUser) bool {
 	return false
 }
 
+// isUsableColor returns true when r,g,b represents a color that is
+// neither too-white (invisible on light bg) nor too-black.
+func isUsableColor(r, g, b int) bool {
+	tooLight := r > 220 && g > 220 && b > 220
+	tooDark := r < 15 && g < 15 && b < 15
+	return !tooLight && !tooDark
+}
+
+func rgbToHex(r, g, b int) string {
+	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
+}
+
 func extractRenderedColor(html string) string {
+	// 1. Explicit CSS color property: #hex
 	if m := renderedColorRe.FindStringSubmatch(html); len(m) == 2 {
 		return "#" + m[1]
 	}
+	// 2. Explicit CSS color property: rgb(r,g,b)
 	if m := renderedRGBRe.FindStringSubmatch(html); len(m) == 4 {
 		r, _ := strconv.Atoi(m[1])
 		g, _ := strconv.Atoi(m[2])
 		b, _ := strconv.Atoi(m[3])
-		return fmt.Sprintf("#%02x%02x%02x", r, g, b)
+		if isUsableColor(r, g, b) {
+			return rgbToHex(r, g, b)
+		}
 	}
+	// 3. Explicit CSS color property: rgba(r,g,b,a)
+	if m := renderedRGBARe.FindStringSubmatch(html); len(m) >= 4 {
+		r, _ := strconv.Atoi(m[1])
+		g, _ := strconv.Atoi(m[2])
+		b, _ := strconv.Atoi(m[3])
+		if isUsableColor(r, g, b) {
+			return rgbToHex(r, g, b)
+		}
+	}
+	// 4. First usable rgba() anywhere — catches gradient backgrounds like
+	//    linear-gradient(…, rgba(251,166,225,1) …)
+	for _, m := range anyRGBAColorRe.FindAllStringSubmatch(html, -1) {
+		r, _ := strconv.Atoi(m[1])
+		g, _ := strconv.Atoi(m[2])
+		b, _ := strconv.Atoi(m[3])
+		if isUsableColor(r, g, b) {
+			return rgbToHex(r, g, b)
+		}
+	}
+	// 5. First usable #RRGGBB hex anywhere — catches hex-based gradients.
 	for _, m := range anyHexColorRe.FindAllStringSubmatch(html, -1) {
 		c := strings.ToLower(m[1])
 		if c == "ffffff" || c == "eeeeee" || c == "000000" {
