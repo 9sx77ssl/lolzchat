@@ -103,6 +103,7 @@ var (
 
 var (
 	renderedColorRe = regexp.MustCompile(`color:\s*#([0-9a-fA-F]{3,8})`)
+	anyHexColorRe   = regexp.MustCompile(`#([0-9a-fA-F]{6})`)
 	rainbowColors   = []lipgloss.Color{
 		"196", "214", "226", "46", "51", "93",
 	}
@@ -115,14 +116,27 @@ func isUniq(user ChatUser) bool {
 	if user.DisplayIconGroupID == 265 {
 		return true
 	}
-	r := user.Rendered.Username
-	if strings.Contains(r, "uniqUsernameIcon--custom") {
+	if user.UniqUsernameCss != "" {
 		return true
 	}
-	if strings.Contains(r, "background-image:") {
+	if strings.Contains(user.Rendered.Username, "uniqUsernameIcon--custom") {
 		return true
 	}
 	return false
+}
+
+func extractRenderedColor(html string) string {
+	if m := renderedColorRe.FindStringSubmatch(html); len(m) == 2 {
+		return "#" + m[1]
+	}
+	for _, m := range anyHexColorRe.FindAllStringSubmatch(html, -1) {
+		c := strings.ToLower(m[1])
+		if c == "ffffff" || c == "eeeeee" || c == "000000" {
+			continue
+		}
+		return "#" + m[1]
+	}
+	return ""
 }
 
 func renderUsername(user ChatUser, isMe bool) string {
@@ -147,8 +161,8 @@ func renderUsername(user ChatUser, isMe bool) string {
 		return rb.String()
 	}
 	if user.Rendered.Username != "" {
-		if m := renderedColorRe.FindStringSubmatch(user.Rendered.Username); len(m) == 2 {
-			return bold.Foreground(lipgloss.Color("#" + m[1])).Render(name)
+		if c := extractRenderedColor(user.Rendered.Username); c != "" {
+			return bold.Foreground(lipgloss.Color(c)).Render(name)
 		}
 	}
 	return usernameStyle.Render(name)

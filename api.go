@@ -37,6 +37,7 @@ type ChatUser struct {
 	IsStaff            bool   `json:"is_staff"`
 	IsBanned           bool   `json:"is_banned"`
 	DisplayIconGroupID int    `json:"display_icon_group_id"`
+	UniqUsernameCss    string `json:"uniq_username_css"`
 	Rendered           struct {
 		Username string `json:"username"`
 	} `json:"rendered"`
