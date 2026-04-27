@@ -876,10 +876,8 @@ func (m model) View() string {
 	}
 
 	helpText := "  Enter: send | Ctrl+E: edit last | Tab: select·reply | Ctrl+R: quick reply | PgUp/Dn: scroll | Esc: exit"
-	if rw := []rune(helpText); len(rw) > m.width {
-		helpText = string(rw[:m.width])
-	}
-	help := helpStyle.Render(helpText)
+	helpLines := wrapText(helpText, m.width-2)
+	help := helpStyle.Render(strings.Join(helpLines, "\n"))
 
 	parts := []string{header, chatArea}
 	if errLine != "" {
