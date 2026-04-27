@@ -161,7 +161,10 @@ func rgbToHex(r, g, b int) string {
 func extractRenderedColor(html string) string {
 	// 1. Explicit CSS color property: #hex
 	if m := renderedColorRe.FindStringSubmatch(html); len(m) == 2 {
-		return "#" + m[1]
+		hex := strings.ToLower(m[1])
+		if hex != "ffffff" && hex != "000000" {
+			return "#" + m[1]
+		}
 	}
 	// 2. Explicit CSS color property: rgb(r,g,b)
 	if m := renderedRGBRe.FindStringSubmatch(html); len(m) == 4 {
@@ -222,9 +225,6 @@ func renderUsername(user ChatUser, isMe bool, simpleMode bool) string {
 		return usernameStyle.Render(name)
 	}
 	if isUniq(user) {
-		if c := extractRenderedColor(user.Rendered.Username); c != "" {
-			return bold.Foreground(lipgloss.Color(c)).Render(name)
-		}
 		var rb strings.Builder
 		for i, r := range []rune(name) {
 			c := rainbowColors[i%len(rainbowColors)]
