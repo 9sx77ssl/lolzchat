@@ -831,16 +831,22 @@ func (m model) View() string {
 	}
 	connDot := lipgloss.NewStyle().Foreground(dotColor).Background(lipgloss.Color("#16213e")).Render("●")
 
-	headerContent := lipgloss.JoinHorizontal(lipgloss.Left,
+	sep := hyellowDim.Render(" | ")
+	headerParts := []string{
 		hyellow.Render(" Chatbox-cli "),
-		hyellowDim.Render(" | "),
-		hyellow.Render("lolz.live/gay1234"),
-		hyellowDim.Render(" | "),
-		hyellow.Render(fmt.Sprintf("#%d %s", m.roomID, m.roomTitle)),
-		hyellowDim.Render(" | "),
-		connDot,
+		sep + hyellow.Render("lolz.live/gay1234"),
+		sep + hyellow.Render(fmt.Sprintf("#%d %s", m.roomID, m.roomTitle)),
+		sep + connDot,
 		hyellowDim.Render(fmt.Sprintf(" [%d] ", m.msgCount)),
-	)
+	}
+	headerContent := ""
+	for _, p := range headerParts {
+		candidate := headerContent + p
+		if lipgloss.Width(candidate) > m.width {
+			break
+		}
+		headerContent = candidate
+	}
 	header := headerBg.Render(headerContent)
 
 	vpStyle := lipgloss.NewStyle().
