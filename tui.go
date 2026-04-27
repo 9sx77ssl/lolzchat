@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,6 +104,7 @@ var (
 
 var (
 	renderedColorRe = regexp.MustCompile(`color:\s*#([0-9a-fA-F]{3,8})`)
+	renderedRGBRe   = regexp.MustCompile(`color:\s*rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)`)
 	anyHexColorRe   = regexp.MustCompile(`#([0-9a-fA-F]{6})`)
 	rainbowColors   = []lipgloss.Color{
 		"196", "214", "226", "46", "51", "93",
@@ -129,6 +131,12 @@ func extractRenderedColor(html string) string {
 	if m := renderedColorRe.FindStringSubmatch(html); len(m) == 2 {
 		return "#" + m[1]
 	}
+	if m := renderedRGBRe.FindStringSubmatch(html); len(m) == 4 {
+		r, _ := strconv.Atoi(m[1])
+		g, _ := strconv.Atoi(m[2])
+		b, _ := strconv.Atoi(m[3])
+		return fmt.Sprintf("#%02x%02x%02x", r, g, b)
+	}
 	for _, m := range anyHexColorRe.FindAllStringSubmatch(html, -1) {
 		c := strings.ToLower(m[1])
 		if c == "ffffff" || c == "eeeeee" || c == "000000" {
@@ -145,6 +153,12 @@ func renderUsername(user ChatUser, isMe bool) string {
 
 	if isMe {
 		return myUsernameStyle.Render(name)
+	}
+	if user.IsAdmin || user.IsMod || user.IsStaff {
+		if c := extractRenderedColor(user.Rendered.Username); c != "" {
+			return bold.Foreground(lipgloss.Color(c)).Render(name)
+		}
+		return usernameStyle.Render(name)
 	}
 	if isUniq(user) {
 		var rb strings.Builder
