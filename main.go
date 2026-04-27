@@ -38,7 +38,7 @@ func main() {
 
 			fmt.Print("\nПроверяем токен...")
 			api := NewAPIClient(cfg.BaseURL, cfg.Token)
-			_, name, _, err := api.GetMe()
+			_, name, _, err := api.GetMe() //nolint
 			if err != nil {
 				fmt.Printf(" Ошибка: %v\n", err)
 				fmt.Println("Попробуй другой токен.\n")
@@ -59,7 +59,7 @@ func main() {
 	api := NewAPIClient(cfg.BaseURL, cfg.Token)
 
 	fmt.Print("Подключение...")
-	myID, myName, myLink, err := api.GetMe()
+	myID, myName, _, err := api.GetMe()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, " Ошибка авторизации: %v\n", err)
 		os.Exit(1)
@@ -102,7 +102,7 @@ func main() {
 		}
 	}
 
-	m := initialModel(cfg, api, myID, myName, myLink, roomID, roomTitle)
+	m := initialModel(cfg, api, myID, myName, roomID, roomTitle)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

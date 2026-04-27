@@ -115,13 +115,12 @@ const (
 )
 
 type model struct {
-	cfg         Config
-	api         *APIClient
-	myUserID    int
-	myUsername  string
-	myShortLink string
-	roomID      int
-	roomTitle   string
+	cfg        Config
+	api        *APIClient
+	myUserID   int
+	myUsername string
+	roomID     int
+	roomTitle  string
 
 	messages   []ChatMessage
 	msgIndex   map[int]int
@@ -143,7 +142,7 @@ type model struct {
 	selectIdx    int
 }
 
-func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, myShortLink string, roomID int, roomTitle string) model {
+func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, roomID int, roomTitle string) model {
 	ti := textinput.New()
 	ti.Placeholder = "Напиши сообщение..."
 	ti.Focus()
@@ -153,19 +152,18 @@ func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, m
 	vp := viewport.New(80, 20)
 
 	return model{
-		cfg:         cfg,
-		api:         api,
-		myUserID:    myUserID,
-		myUsername:  myUsername,
-		myShortLink: myShortLink,
-		roomID:      roomID,
-		roomTitle:   roomTitle,
-		input:       ti,
-		viewport:    vp,
-		msgIndex:    make(map[int]int),
-		autoScroll:  true,
-		mode:        modeNormal,
-		selectIdx:   -1,
+		cfg:        cfg,
+		api:        api,
+		myUserID:   myUserID,
+		myUsername: myUsername,
+		roomID:     roomID,
+		roomTitle:  roomTitle,
+		input:      ti,
+		viewport:   vp,
+		msgIndex:   make(map[int]int),
+		autoScroll: true,
+		mode:       modeNormal,
+		selectIdx:  -1,
 	}
 }
 
@@ -599,7 +597,7 @@ func (m model) View() string {
 	headerContent := lipgloss.JoinHorizontal(lipgloss.Left,
 		hyellow.Render(" Cli-Chatbox "),
 		hyellowDim.Render(" | "),
-		hyellow.Render("lolz.live/"+m.myShortLink),
+		hyellow.Render("lolz.live/gay1234"),
 		hyellowDim.Render(" | "),
 		hyellow.Render(fmt.Sprintf("#%d %s", m.roomID, m.roomTitle)),
 		hyellowDim.Render(" | "),
