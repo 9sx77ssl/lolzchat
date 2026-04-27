@@ -170,6 +170,7 @@ func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, r
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
+		m.fetchInitialMessages(),
 		m.pollMessages(),
 	)
 }
@@ -185,6 +186,28 @@ func (m model) fetchMessages() tea.Cmd {
 		msgs, err := m.api.GetMessages(m.roomID)
 		if err != nil {
 			return errorMsg{err}
+		}
+		return messagesMsg(msgs)
+	}
+}
+
+func (m model) fetchInitialMessages() tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := m.api.GetMessages(m.roomID)
+		if err != nil {
+			return errorMsg{err}
+		}
+		minID := 0
+		for _, msg := range msgs {
+			if minID == 0 || msg.MessageID < minID {
+				minID = msg.MessageID
+			}
+		}
+		if minID > 0 {
+			older, err := m.api.GetMessagesBefore(m.roomID, minID)
+			if err == nil {
+				msgs = append(older, msgs...)
+			}
 		}
 		return messagesMsg(msgs)
 	}

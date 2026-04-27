@@ -7,6 +7,7 @@ Terminal chat client for [lolz.live](https://lolz.live) built with [Bubble Tea](
 ## Features
 
 - Real-time message polling
+- **Double-fetch on startup** — loads ~100 messages immediately (2 requests: latest batch + one older batch)
 - Reply to any message (Tab to select, Ctrl+R for quick reply)
 - Edit your last message (Ctrl+E)
 - Mention highlighting (your username highlighted in gold)
@@ -19,7 +20,7 @@ Terminal chat client for [lolz.live](https://lolz.live) built with [Bubble Tea](
 ## Installation
 
 ```bash
-git clone https://github.com/noki4ngel/lolzchat
+git clone https://github.com/9sx77ssl/lolzchat
 cd lolzchat
 go build -o lolzchat .
 ./lolzchat

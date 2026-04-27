@@ -137,8 +137,15 @@ func (c *APIClient) GetRooms() ([]RoomInfo, error) {
 }
 
 func (c *APIClient) GetMessages(roomID int) ([]ChatMessage, error) {
-	url := fmt.Sprintf("%s/chatbox/messages?room_id=%d", c.baseURL, roomID)
-	data, err := c.doRequest("GET", url, nil)
+	return c.GetMessagesBefore(roomID, 0)
+}
+
+func (c *APIClient) GetMessagesBefore(roomID, beforeID int) ([]ChatMessage, error) {
+	u := fmt.Sprintf("%s/chatbox/messages?room_id=%d", c.baseURL, roomID)
+	if beforeID > 0 {
+		u += fmt.Sprintf("&before_message_id=%d", beforeID)
+	}
+	data, err := c.doRequest("GET", u, nil)
 	if err != nil {
 		return nil, err
 	}
