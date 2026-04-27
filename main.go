@@ -94,7 +94,15 @@ func main() {
 		break
 	}
 
-	m := initialModel(cfg, api, myID, myName, roomID)
+	roomTitle := ""
+	for _, r := range rooms {
+		if r.RoomID == roomID {
+			roomTitle = r.Title
+			break
+		}
+	}
+
+	m := initialModel(cfg, api, myID, myName, roomID, roomTitle)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

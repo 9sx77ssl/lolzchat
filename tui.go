@@ -120,6 +120,7 @@ type model struct {
 	myUserID   int
 	myUsername string
 	roomID     int
+	roomTitle  string
 
 	messages   []ChatMessage
 	msgIndex   map[int]int
@@ -141,7 +142,7 @@ type model struct {
 	selectIdx    int
 }
 
-func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, roomID int) model {
+func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, roomID int, roomTitle string) model {
 	ti := textinput.New()
 	ti.Placeholder = "Напиши сообщение..."
 	ti.Focus()
@@ -154,8 +155,9 @@ func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, r
 		cfg:        cfg,
 		api:        api,
 		myUserID:   myUserID,
-		myUsername:  myUsername,
+		myUsername: myUsername,
 		roomID:     roomID,
+		roomTitle:  roomTitle,
 		input:      ti,
 		viewport:   vp,
 		msgIndex:   make(map[int]int),
@@ -218,6 +220,59 @@ func (m model) editMessage(msgID int, text string) tea.Cmd {
 	}
 }
 
+func (m *model) recalcViewport() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	extra := 0
+	if m.mode != modeNormal {
+		extra = 1
+	}
+	vpH := m.height - 1 - 3 - 1 - extra - 2
+	if vpH < 3 {
+		vpH = 3
+	}
+	vpW := m.width - 2
+	if vpW < 20 {
+		vpW = 20
+	}
+	m.viewport.Width = vpW
+	m.viewport.Height = vpH
+	m.input.Width = vpW - 4
+}
+
+func (m model) msgLineCount(msg ChatMessage) int {
+	if msg.IsDeleted {
+		return 1
+	}
+	n := 0
+	if msg.Reply != nil {
+		n++
+	}
+	if isImageMessage(msg.MessageRaw) {
+		return n + 1
+	}
+	text := cleanMessage(msg.MessageRaw, msg.Message)
+	n += len(strings.Split(text, "\n"))
+	return n
+}
+
+func (m *model) scrollToSelected() {
+	if m.selectIdx < 0 || m.selectIdx >= len(m.messages) {
+		return
+	}
+	line := 0
+	for i := 0; i < m.selectIdx; i++ {
+		line += m.msgLineCount(m.messages[i])
+	}
+	vpH := m.viewport.Height
+	if line < m.viewport.YOffset {
+		m.viewport.YOffset = line
+	} else if line >= m.viewport.YOffset+vpH {
+		m.viewport.YOffset = line - vpH + 1
+	}
+}
+
 func (m *model) findLastMyMessage() (int, string) {
 	for i := len(m.messages) - 1; i >= 0; i-- {
 		msg := m.messages[i]
@@ -261,6 +316,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.SetValue("")
 				m.input.Placeholder = "Напиши сообщение..."
 				m.input.Focus()
+				m.recalcViewport()
 				m.viewport.SetContent(m.renderMessages())
 			} else {
 				return m, tea.Quit
@@ -276,6 +332,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input.Placeholder = "Ответ..."
 					m.input.SetValue("")
 					m.input.Focus()
+					m.recalcViewport()
 					m.viewport.SetContent(m.renderMessages())
 				}
 			} else {
@@ -289,12 +346,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.mode = modeNormal
 						m.editMsgID = 0
 						m.input.Placeholder = "Напиши сообщение..."
+						m.recalcViewport()
 					case modeReply:
 						cmds = append(cmds, m.replyMessage(m.replyMsgID, text))
 						m.mode = modeNormal
 						m.replyMsgID = 0
 						m.replyPreview = ""
 						m.input.Placeholder = "Напиши сообщение..."
+						m.recalcViewport()
 					default:
 						cmds = append(cmds, m.sendMessage(text))
 					}
@@ -305,8 +364,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = modeSelect
 				m.selectIdx = len(m.messages) - 1
 				m.input.Blur()
+				m.recalcViewport()
 				m.viewport.SetContent(m.renderMessages())
-				m.autoScroll = true
 				m.viewport.GotoBottom()
 			}
 		case "up":
@@ -315,6 +374,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectIdx > 0 {
 					m.selectIdx--
 					m.viewport.SetContent(m.renderMessages())
+					m.scrollToSelected()
 				}
 			} else {
 				m.autoScroll = false
@@ -326,6 +386,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectIdx < len(m.messages)-1 {
 					m.selectIdx++
 					m.viewport.SetContent(m.renderMessages())
+					m.scrollToSelected()
 				}
 			} else {
 				m.viewport.LineDown(1)
@@ -352,6 +413,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input.SetValue(text)
 					m.input.Placeholder = "Редактирование..."
 					m.input.CursorEnd()
+					m.recalcViewport()
 				}
 			}
 		case "ctrl+r":
@@ -362,30 +424,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.replyPreview = m.msgPreview(last)
 				m.input.Placeholder = "Ответ..."
 				m.input.SetValue("")
+				m.recalcViewport()
 			}
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		headerH := 1
-		inputH := 3
-		helpH := 1
-		extra := 0
-		if m.mode == modeReply {
-			extra = 1
-		}
-		vpH := m.height - headerH - inputH - helpH - extra - 2
-		if vpH < 3 {
-			vpH = 3
-		}
-		vpW := m.width - 2
-		if vpW < 20 {
-			vpW = 20
-		}
-		m.viewport.Width = vpW
-		m.viewport.Height = vpH
-		m.input.Width = vpW - 4
+		m.recalcViewport()
 		m.viewport.SetContent(m.renderMessages())
 
 	case tickMsg:
@@ -538,22 +584,30 @@ func (m model) View() string {
 		return "Loading..."
 	}
 
-	title := titleStyle.Render(" LOLZCHAT ")
-	room := roomStyle.Render(fmt.Sprintf(" #%d ", m.roomID))
-	connDot := "x"
-	if m.connected {
-		connDot = "o"
-	}
-	connStr := onlineStyle.Render(connDot)
-	msgCountStr := statusStyle.Render(fmt.Sprintf(" [%d] ", m.msgCount))
-
-	headerContent := lipgloss.JoinHorizontal(lipgloss.Center,
-		title, " ", room, " ", connStr, " ", msgCountStr,
-	)
 	headerBg := lipgloss.NewStyle().
 		Width(m.width).
 		Background(lipgloss.Color("#16213e")).
 		Foreground(lipgloss.Color("#c9c9e0"))
+
+	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#333355")).Background(lipgloss.Color("#16213e"))
+	userLinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888899")).Background(lipgloss.Color("#16213e"))
+
+	titlePart := titleStyle.Render(" Cli-Chatbox ")
+	sep := sepStyle.Render(" | ")
+	userPart := userLinkStyle.Render(fmt.Sprintf("lolz.live/%s", m.myUsername))
+	roomPart := roomStyle.Render(fmt.Sprintf(" #%d %s ", m.roomID, m.roomTitle))
+	dotStyle := lipgloss.NewStyle().Background(lipgloss.Color("#16213e"))
+	if m.connected {
+		dotStyle = dotStyle.Foreground(lipgloss.Color("#53d769"))
+	} else {
+		dotStyle = dotStyle.Foreground(lipgloss.Color("#ff4757"))
+	}
+	connDot := dotStyle.Render("●")
+	msgCountStr := statusStyle.Render(fmt.Sprintf(" [%d] ", m.msgCount))
+
+	headerContent := lipgloss.JoinHorizontal(lipgloss.Left,
+		titlePart, sep, userPart, sep, roomPart, " ", connDot, msgCountStr,
+	)
 	header := headerBg.Render(headerContent)
 
 	vpStyle := lipgloss.NewStyle().
