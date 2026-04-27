@@ -146,12 +146,6 @@ func renderUsername(user ChatUser, isMe bool) string {
 	if isMe {
 		return myUsernameStyle.Render(name)
 	}
-	if user.IsAdmin {
-		return bold.Foreground(lipgloss.Color("#f13838")).Render(name)
-	}
-	if user.IsMod {
-		return bold.Foreground(lipgloss.Color("#0e9100")).Render(name)
-	}
 	if isUniq(user) {
 		var rb strings.Builder
 		for i, r := range []rune(name) {
