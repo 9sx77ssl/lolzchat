@@ -35,6 +35,7 @@ type ChatUser struct {
 	IsAdmin            bool   `json:"is_admin"`
 	IsMod              bool   `json:"is_moderator"`
 	IsStaff            bool   `json:"is_staff"`
+	IsSuperAdmin       bool   `json:"is_super_admin"`
 	IsBanned           bool   `json:"is_banned"`
 	DisplayIconGroupID int    `json:"display_icon_group_id"`
 	UniqUsernameCss    string `json:"uniq_username_css"`

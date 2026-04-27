@@ -111,6 +111,10 @@ var (
 	}
 )
 
+func isForumStaff(user ChatUser) bool {
+	return user.IsAdmin || user.IsSuperAdmin || user.IsMod || user.IsStaff
+}
+
 func isUniq(user ChatUser) bool {
 	if user.UserTitle == "Уник" {
 		return true
@@ -154,7 +158,7 @@ func renderUsername(user ChatUser, isMe bool) string {
 	if isMe {
 		return myUsernameStyle.Render(name)
 	}
-	if user.IsAdmin || user.IsMod || user.IsStaff {
+	if isForumStaff(user) {
 		if c := extractRenderedColor(user.Rendered.Username); c != "" {
 			return bold.Foreground(lipgloss.Color(c)).Render(name)
 		}
