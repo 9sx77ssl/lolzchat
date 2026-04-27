@@ -115,12 +115,13 @@ const (
 )
 
 type model struct {
-	cfg        Config
-	api        *APIClient
-	myUserID   int
-	myUsername string
-	roomID     int
-	roomTitle  string
+	cfg         Config
+	api         *APIClient
+	myUserID    int
+	myUsername  string
+	myShortLink string
+	roomID      int
+	roomTitle   string
 
 	messages   []ChatMessage
 	msgIndex   map[int]int
@@ -142,7 +143,7 @@ type model struct {
 	selectIdx    int
 }
 
-func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, roomID int, roomTitle string) model {
+func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, myShortLink string, roomID int, roomTitle string) model {
 	ti := textinput.New()
 	ti.Placeholder = "Напиши сообщение..."
 	ti.Focus()
@@ -152,18 +153,19 @@ func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, r
 	vp := viewport.New(80, 20)
 
 	return model{
-		cfg:        cfg,
-		api:        api,
-		myUserID:   myUserID,
-		myUsername: myUsername,
-		roomID:     roomID,
-		roomTitle:  roomTitle,
-		input:      ti,
-		viewport:   vp,
-		msgIndex:   make(map[int]int),
-		autoScroll: true,
-		mode:       modeNormal,
-		selectIdx:  -1,
+		cfg:         cfg,
+		api:         api,
+		myUserID:    myUserID,
+		myUsername:  myUsername,
+		myShortLink: myShortLink,
+		roomID:      roomID,
+		roomTitle:   roomTitle,
+		input:       ti,
+		viewport:    vp,
+		msgIndex:    make(map[int]int),
+		autoScroll:  true,
+		mode:        modeNormal,
+		selectIdx:   -1,
 	}
 }
 
@@ -584,29 +586,25 @@ func (m model) View() string {
 		return "Loading..."
 	}
 
-	headerBg := lipgloss.NewStyle().
-		Width(m.width).
-		Background(lipgloss.Color("#16213e")).
-		Foreground(lipgloss.Color("#c9c9e0"))
+	hyellow := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffd700")).Background(lipgloss.Color("#16213e"))
+	hyellowDim := lipgloss.NewStyle().Foreground(lipgloss.Color("#ccaa00")).Background(lipgloss.Color("#16213e"))
+	headerBg := lipgloss.NewStyle().Width(m.width).Background(lipgloss.Color("#16213e"))
 
-	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#333355")).Background(lipgloss.Color("#16213e"))
-	userLinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888899")).Background(lipgloss.Color("#16213e"))
-
-	titlePart := titleStyle.Render(" Cli-Chatbox ")
-	sep := sepStyle.Render(" | ")
-	userPart := userLinkStyle.Render(fmt.Sprintf("lolz.live/%s", m.myUsername))
-	roomPart := roomStyle.Render(fmt.Sprintf(" #%d %s ", m.roomID, m.roomTitle))
-	dotStyle := lipgloss.NewStyle().Background(lipgloss.Color("#16213e"))
+	dotColor := lipgloss.Color("#ff4757")
 	if m.connected {
-		dotStyle = dotStyle.Foreground(lipgloss.Color("#53d769"))
-	} else {
-		dotStyle = dotStyle.Foreground(lipgloss.Color("#ff4757"))
+		dotColor = lipgloss.Color("#53d769")
 	}
-	connDot := dotStyle.Render("●")
-	msgCountStr := statusStyle.Render(fmt.Sprintf(" [%d] ", m.msgCount))
+	connDot := lipgloss.NewStyle().Foreground(dotColor).Background(lipgloss.Color("#16213e")).Render("●")
 
 	headerContent := lipgloss.JoinHorizontal(lipgloss.Left,
-		titlePart, sep, userPart, sep, roomPart, " ", connDot, msgCountStr,
+		hyellow.Render(" Cli-Chatbox "),
+		hyellowDim.Render(" | "),
+		hyellow.Render("lolz.live/"+m.myShortLink),
+		hyellowDim.Render(" | "),
+		hyellow.Render(fmt.Sprintf("#%d %s", m.roomID, m.roomTitle)),
+		hyellowDim.Render(" | "),
+		connDot,
+		hyellowDim.Render(fmt.Sprintf(" [%d] ", m.msgCount)),
 	)
 	header := headerBg.Render(headerContent)
 

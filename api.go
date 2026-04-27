@@ -52,8 +52,9 @@ type PostMessageResponse struct {
 
 type MeResponse struct {
 	User struct {
-		UserID   int    `json:"user_id"`
-		Username string `json:"username"`
+		UserID    int    `json:"user_id"`
+		Username  string `json:"username"`
+		ShortLink string `json:"short_link"`
 	} `json:"user"`
 }
 
@@ -107,16 +108,20 @@ func (c *APIClient) doRequest(method, url string, body io.Reader) ([]byte, error
 	return data, nil
 }
 
-func (c *APIClient) GetMe() (int, string, error) {
+func (c *APIClient) GetMe() (int, string, string, error) {
 	data, err := c.doRequest("GET", c.baseURL+"/users/me", nil)
 	if err != nil {
-		return 0, "", err
+		return 0, "", "", err
 	}
 	var resp MeResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return 0, "", err
+		return 0, "", "", err
 	}
-	return resp.User.UserID, resp.User.Username, nil
+	link := resp.User.ShortLink
+	if link == "" {
+		link = resp.User.Username
+	}
+	return resp.User.UserID, resp.User.Username, link, nil
 }
 
 func (c *APIClient) GetRooms() ([]RoomInfo, error) {
@@ -216,12 +221,12 @@ var htmlEntityMap = map[string]string{
 }
 
 var (
-	bbUserRe    = regexp.MustCompile(`\[USER=\d+\]@?`)
-	bbUserEndRe = regexp.MustCompile(`\[/USER\]`)
-	bbTooltipRe = regexp.MustCompile(`\[tooltip=\d+\]`)
+	bbUserRe       = regexp.MustCompile(`\[USER=\d+\]@?`)
+	bbUserEndRe    = regexp.MustCompile(`\[/USER\]`)
+	bbTooltipRe    = regexp.MustCompile(`\[tooltip=\d+\]`)
 	bbTooltipEndRe = regexp.MustCompile(`\[/tooltip\]`)
-	bbImgRe     = regexp.MustCompile(`\[IMG\](.*?)\[/IMG\]`)
-	bbGenericRe = regexp.MustCompile(`\[/?[A-Za-z]+(?:=[^\]]*)?]`)
+	bbImgRe        = regexp.MustCompile(`\[IMG\](.*?)\[/IMG\]`)
+	bbGenericRe    = regexp.MustCompile(`\[/?[A-Za-z]+(?:=[^\]]*)?]`)
 )
 
 func stripHTML(s string) string {
