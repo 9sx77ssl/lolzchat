@@ -88,18 +88,12 @@ func (ir *ImageRenderer) detectBackend(mode string) ImgBackend {
 		}
 		return ImgBackendNone
 	}
-	// auto-detect: kitty > ueberzug++ > chafa
-	if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("TERM") == "xterm-kitty" {
-		if _, e := exec.LookPath("chafa"); e == nil {
+	// auto-detect: chafa (inline, bordered) > kitty > none
+	// ueberzug is only used if explicitly set (overlays can't be bordered)
+	if _, e := exec.LookPath("chafa"); e == nil {
+		if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("TERM") == "xterm-kitty" {
 			return ImgBackendKitty
 		}
-	}
-	if _, e := exec.LookPath("ueberzugpp"); e == nil {
-		if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
-			return ImgBackendUeberzug
-		}
-	}
-	if _, e := exec.LookPath("chafa"); e == nil {
 		return ImgBackendChafa
 	}
 	return ImgBackendNone
@@ -175,11 +169,14 @@ func (ir *ImageRenderer) InvalidateRenderCache() {
 }
 
 // RenderInline runs chafa on localPath and returns exactly imgH ANSI lines.
+// The width parameter is the TOTAL available width (including border).
+// Art is rendered at width-2 to leave room for │ borders.
 func (ir *ImageRenderer) RenderInline(localPath string, width int) ([]string, error) {
-	if width < 4 {
-		width = 4
+	innerW := width - 2
+	if innerW < 4 {
+		innerW = 4
 	}
-	sizeStr := fmt.Sprintf("%dx%d", width, ir.imgH)
+	sizeStr := fmt.Sprintf("%dx%d", innerW, ir.imgH)
 	var args []string
 	if ir.backend == ImgBackendKitty {
 		args = []string{"--size", sizeStr, "--format=kitty", "--stretch", localPath}
@@ -198,40 +195,81 @@ func (ir *ImageRenderer) RenderInline(localPath string, width int) ([]string, er
 	return lines[:ir.imgH], nil
 }
 
-// Placeholder returns imgH lines for a slot where the image is loading or will be overlaid.
+// Placeholder returns imgH+2 lines (border top + empty/loading + border bottom).
 func (ir *ImageRenderer) Placeholder(url string, width int) []string {
-	if width < 4 {
-		width = 4
+	if width < 6 {
+		width = 6
 	}
-	inner := width - 2 // width between the │ borders
+	inner := width - 2 // width between │ borders
 	hline := strings.Repeat("─", inner)
 	empty := "│" + strings.Repeat(" ", inner) + "│"
 
-	lines := make([]string, ir.imgH)
-	lines[0] = "╭" + hline + "╮"
+	lines := make([]string, 0, ir.imgH+2)
+	lines = append(lines, "╭"+hline+"╮")
 
-	if ir.imgH >= 2 {
-		maxL := inner - 2
-		if maxL < 0 {
-			maxL = 0
+	// First inner line shows "загрузка..." label
+	maxL := inner - 2
+	if maxL < 0 {
+		maxL = 0
+	}
+	label := "⏳ загрузка..."
+	if runes := []rune(label); len(runes) > maxL {
+		if maxL > 1 {
+			label = string(runes[:maxL-1]) + "…"
+		} else {
+			label = ""
 		}
-		label := url
-		if runes := []rune(label); len(runes) > maxL {
-			if maxL > 1 {
-				label = string(runes[:maxL-1]) + "…"
-			} else {
-				label = ""
-			}
-		}
-		lines[1] = fmt.Sprintf("│ %-*s │", inner-2, label)
 	}
-	for i := 2; i < ir.imgH-1; i++ {
-		lines[i] = empty
+	lines = append(lines, fmt.Sprintf("│ %-*s│", inner-1, label))
+
+	for i := 1; i < ir.imgH; i++ {
+		lines = append(lines, empty)
 	}
-	if ir.imgH >= 2 {
-		lines[ir.imgH-1] = "╰" + hline + "╯"
-	}
+	lines = append(lines, "╰"+hline+"╯")
 	return lines
+}
+
+// BorderWrap wraps art lines in a box-drawing border. Returns imgH+2 lines.
+func (ir *ImageRenderer) BorderWrap(artLines []string, width int) []string {
+	if width < 6 {
+		width = 6
+	}
+	inner := width - 2
+	hline := strings.Repeat("─", inner)
+
+	lines := make([]string, 0, len(artLines)+2)
+	lines = append(lines, "╭"+hline+"╮")
+	for _, al := range artLines {
+		// Pad or trim art line to fit exactly inside border
+		visLen := lipglossWidth(al)
+		if visLen < inner {
+			al += strings.Repeat(" ", inner-visLen)
+		}
+		lines = append(lines, "│"+al+"│")
+	}
+	lines = append(lines, "╰"+hline+"╯")
+	return lines
+}
+
+// lipglossWidth returns the visible width of a string (ignoring ANSI escapes).
+func lipglossWidth(s string) int {
+	// Strip ANSI escape sequences to measure visible width
+	inEsc := false
+	w := 0
+	for _, r := range s {
+		if r == '\x1b' {
+			inEsc = true
+			continue
+		}
+		if inEsc {
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '~' {
+				inEsc = false
+			}
+			continue
+		}
+		w++
+	}
+	return w
 }
 
 // Cleanup removes the temporary image directory.

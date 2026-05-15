@@ -468,9 +468,9 @@ func (m model) msgLineCount(msg ChatMessage) int {
 	if isImageMessage(msg.MessageRaw) {
 		imgH := 0
 		if m.imgRenderer != nil && m.imgRenderer.backend != ImgBackendNone {
-			imgH = m.imgRenderer.imgH
+			imgH = m.imgRenderer.imgH + 2 // +2 for border top/bottom
 		}
-		return n + 1 + imgH // header line + art/placeholder lines
+		return n + 1 + imgH // header line + bordered art lines
 	}
 	text := cleanMessage(msg.MessageRaw, msg.Message)
 	indent := 2 + 5 + 1 + len([]rune(msg.User.Username)) + 2
@@ -864,24 +864,28 @@ func (m *model) renderMessages() string {
 					sb.WriteString(fmt.Sprintf("%s%s %s  %s\n",
 						prefix, timeStr, nameStr, imgStyle.Render("📷")))
 
-					// Art lines for inline backends, empty space for ueberzug overlay
-					var artLines []string
+					// Get or build bordered image lines
+					var borderedLines []string
 					if m.imgRenderer.backend == ImgBackendChafa || m.imgRenderer.backend == ImgBackendKitty {
-						artLines = m.imgRenderer.GetRendered(url, artWidth)
+						artLines := m.imgRenderer.GetRendered(url, artWidth)
+						if artLines != nil {
+							borderedLines = m.imgRenderer.BorderWrap(artLines, artWidth)
+						}
 					}
-					if artLines == nil {
+					if borderedLines == nil {
 						if m.imgRenderer.backend == ImgBackendUeberzug {
-							// Empty space — ueberzug renders pixels on top
-							emptyLine := strings.Repeat(" ", artWidth)
-							artLines = make([]string, m.imgRenderer.imgH)
+							// Empty bordered space — ueberzug renders pixels on top
+							emptyLine := strings.Repeat(" ", artWidth-2)
+							artLines := make([]string, m.imgRenderer.imgH)
 							for i := range artLines {
 								artLines[i] = emptyLine
 							}
+							borderedLines = m.imgRenderer.BorderWrap(artLines, artWidth)
 						} else {
-							artLines = m.imgRenderer.Placeholder(url, artWidth)
+							borderedLines = m.imgRenderer.Placeholder(url, artWidth)
 						}
 					}
-					for _, l := range artLines {
+					for _, l := range borderedLines {
 						sb.WriteString(indentStr + l + "\n")
 					}
 				} else {
