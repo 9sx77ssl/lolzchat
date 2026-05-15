@@ -889,9 +889,11 @@ func (m *model) renderMessages() string {
 						sb.WriteString(indentStr + l + "\n")
 					}
 				} else {
-					// No renderer — clean marker only, no URL spam
+					// No renderer — clickable hyperlink marker (Ctrl+Click to open)
+					hyperlink := fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\",
+						url, imgStyle.Render("📷 изображение"))
 					sb.WriteString(fmt.Sprintf("%s%s %s  %s\n",
-						prefix, timeStr, nameStr, imgStyle.Render("📷 изображение")))
+						prefix, timeStr, nameStr, hyperlink))
 				}
 			}
 			currentLine += m.msgLineCount(msg)

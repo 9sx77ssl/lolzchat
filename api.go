@@ -240,9 +240,22 @@ var (
 	bbTooltipRe    = regexp.MustCompile(`\[tooltip=\d+\]`)
 	bbTooltipEndRe = regexp.MustCompile(`\[/tooltip\]`)
 	bbImgRe        = regexp.MustCompile(`\[IMG\](.*?)\[/IMG\]`)
+	bbURLRe        = regexp.MustCompile(`(?i)\[URL(?:=[^\]]*)?\](.*?)\[/URL\]`)
 	bbGenericRe    = regexp.MustCompile(`\[/?[A-Za-z]+(?:=[^\]]*)?]`)
-	// Bare image URL regex — matches standalone URLs ending with image extensions
-	bareImageRe = regexp.MustCompile(`(?i)^https?://[^\s]+\.(jpe?g|png|gif|webp|bmp|svg|tiff?|ico|avif|heic)(\?[^\s]*)?$`)
+	// Bare image URL — ends with image extension
+	imgExtRe = regexp.MustCompile(`(?i)\.(jpe?g|png|gif|webp|bmp|svg|tiff?|ico|avif|heic)(\?[^\s]*)?$`)
+	// Known image CDN domains — URL from these is always an image
+	imgCDNPatterns = []string{
+		"nztcdn.com/files/",
+		"i.pinimg.com/",
+		"i.imgur.com/",
+		"cdn.discordapp.com/attachments/",
+		"media.discordapp.net/attachments/",
+		"pbs.twimg.com/media/",
+		"sun9-", // vk cdn
+	}
+	// Extract any URL from text
+	anyURLRe = regexp.MustCompile(`https?://[^\s\[\]<>"]+`)
 )
 
 func stripHTML(s string) string {
@@ -282,29 +295,82 @@ func cleanMessage(raw string, html string) string {
 	return result
 }
 
+// extractRawURL extracts the meaningful URL from a message raw string,
+// stripping BB-code [IMG], [URL] wrappers.
+func extractRawURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	// [IMG]url[/IMG]
+	if m := bbImgRe.FindStringSubmatch(trimmed); len(m) > 1 {
+		return strings.TrimSpace(m[1])
+	}
+	// [URL=...]text[/URL] or [URL]url[/URL]
+	if m := bbURLRe.FindStringSubmatch(trimmed); len(m) > 1 {
+		inner := strings.TrimSpace(m[1])
+		if strings.HasPrefix(inner, "http") {
+			return inner
+		}
+	}
+	// Any URL in the text
+	if m := anyURLRe.FindString(trimmed); m != "" {
+		return m
+	}
+	return ""
+}
+
+// looksLikeImageURL checks if a URL looks like it points to an image.
+func looksLikeImageURL(url string) bool {
+	if url == "" {
+		return false
+	}
+	lower := strings.ToLower(url)
+	// Extension-based
+	if imgExtRe.MatchString(url) {
+		return true
+	}
+	// CDN domain-based
+	for _, pat := range imgCDNPatterns {
+		if strings.Contains(lower, pat) {
+			return true
+		}
+	}
+	return false
+}
+
+// isImageMessage returns true if the entire message is just an image.
 func isImageMessage(raw string) bool {
 	trimmed := strings.TrimSpace(raw)
-	// BB-code image
+	// [IMG]...[/IMG]
 	if strings.HasPrefix(trimmed, "[IMG]") && strings.HasSuffix(trimmed, "[/IMG]") {
 		return true
 	}
-	// Bare image URL (entire message is just a URL to an image)
-	if bareImageRe.MatchString(trimmed) {
-		return true
+	// Message is just a single URL that looks like an image
+	url := extractRawURL(raw)
+	if url == "" {
+		return false
+	}
+	// Make sure the entire message content IS the URL (not a URL within text)
+	stripped := bbURLRe.ReplaceAllString(trimmed, "$1")
+	stripped = bbImgRe.ReplaceAllString(stripped, "$1")
+	stripped = strings.TrimSpace(stripped)
+	// If after stripping, the content is just the URL — it's an image message
+	if stripped == url || trimmed == url {
+		return looksLikeImageURL(url)
+	}
+	// Also handle [URL=X]X[/URL] where the visible text equals the URL
+	if looksLikeImageURL(url) {
+		noTags := bbGenericRe.ReplaceAllString(trimmed, "")
+		noTags = strings.TrimSpace(noTags)
+		if noTags == url {
+			return true
+		}
 	}
 	return false
 }
 
 func extractImageURL(raw string) string {
-	// Try BB-code first
-	matches := bbImgRe.FindStringSubmatch(raw)
-	if len(matches) > 1 {
-		return strings.TrimSpace(matches[1])
-	}
-	// Try bare URL
-	trimmed := strings.TrimSpace(raw)
-	if bareImageRe.MatchString(trimmed) {
-		return trimmed
+	url := extractRawURL(raw)
+	if url != "" && looksLikeImageURL(url) {
+		return url
 	}
 	return ""
 }
