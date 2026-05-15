@@ -8,23 +8,19 @@ import (
 )
 
 type Config struct {
-	Token       string `yaml:"token"`
-	PollMs      int    `yaml:"poll_ms"`
-	BaseURL     string `yaml:"base_url"`
-	MaxHistory  int    `yaml:"max_history"`
-	SimpleMode  bool   `yaml:"simple_mode"`
-	ImageMode   string `yaml:"image_mode"`   // auto / chafa / kitty / ueberzug / none
-	ImageHeight int    `yaml:"image_height"` // image height in terminal rows (default 8)
+	Token      string `yaml:"token"`
+	PollMs     int    `yaml:"poll_ms"`
+	BaseURL    string `yaml:"base_url"`
+	MaxHistory int    `yaml:"max_history"`
+	SimpleMode bool   `yaml:"simple_mode"`
 }
 
 func defaultConfig() Config {
 	return Config{
-		Token:       "",
-		PollMs:      200,
-		BaseURL:     "https://prod-api.lolz.live",
-		MaxHistory:  300,
-		ImageMode:   "auto",
-		ImageHeight: defaultImgHeight,
+		Token:      "",
+		PollMs:     200,
+		BaseURL:    "https://prod-api.lolz.live",
+		MaxHistory: 300,
 	}
 }
 
@@ -58,15 +54,6 @@ func loadConfig() (Config, bool) {
 	if cfg.MaxHistory < 50 {
 		cfg.MaxHistory = 50
 	}
-	if cfg.ImageHeight < 3 {
-		cfg.ImageHeight = defaultImgHeight
-	}
-	if cfg.ImageHeight > 8 {
-		cfg.ImageHeight = 8
-	}
-	if cfg.ImageMode == "" {
-		cfg.ImageMode = "auto"
-	}
 
 	return cfg, false
 }
@@ -76,6 +63,6 @@ func saveConfig(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	header := []byte("# Lolzchat TUI Configuration\n# Get your token from https://lolz.live/account/api\n#\n# simple_mode: false  — цветные ники с детектом групп, уников, радугой и т.д.\n# simple_mode: true   — все ники красные, только вы зеленым (как в старой версии)\n#\n# image_mode: auto      — по умолчанию показывает 📷 маркер (без рендера)\n#             chafa     — ANSI block-art в рамке (нужен chafa)\n#             kitty     — kitty graphics protocol (Kitty/WezTerm + chafa)\n#             ueberzug  — Überzug++ пиксельный оверлей (явный opt-in)\n#             none      — то же что auto, просто маркер без URL\n# image_height: 5       — высота изображения в строках терминала (3-8)\n\n")
+	header := []byte("# Lolzchat TUI Configuration\n# Get your token from https://lolz.live/account/api\n#\n# simple_mode: false  — цветные ники с детектом групп, уников, радугой и т.д.\n# simple_mode: true   — все ники красные, только вы зеленым (как в старой версии)\n\n")
 	return os.WriteFile(configPath(), append(header, data...), 0600)
 }

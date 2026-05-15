@@ -239,7 +239,7 @@ var (
 	bbUserEndRe    = regexp.MustCompile(`\[/USER\]`)
 	bbTooltipRe    = regexp.MustCompile(`\[tooltip=\d+\]`)
 	bbTooltipEndRe = regexp.MustCompile(`\[/tooltip\]`)
-	bbImgRe        = regexp.MustCompile(`\[IMG\](.*?)\[/IMG\]`)
+	bbImgRe        = regexp.MustCompile(`(?i)\[IMG\](.*?)\[/IMG\]`)
 	bbURLRe        = regexp.MustCompile(`(?i)\[URL[^\]]*\](.*?)\[/URL\]`)
 	bbURLAttrRe    = regexp.MustCompile(`(?i)\[URL=([^\]\s"']+)`)
 	bbGenericRe    = regexp.MustCompile(`\[/?[A-Za-z]+[^\]]*\]`)
@@ -347,8 +347,9 @@ func looksLikeImageURL(url string) bool {
 // isImageMessage returns true if the entire message is just an image.
 func isImageMessage(raw string) bool {
 	trimmed := strings.TrimSpace(raw)
-	// [IMG]...[/IMG]
-	if strings.HasPrefix(trimmed, "[IMG]") && strings.HasSuffix(trimmed, "[/IMG]") {
+	upper := strings.ToUpper(trimmed)
+	// [IMG]...[/IMG] (case-insensitive)
+	if strings.HasPrefix(upper, "[IMG]") && strings.HasSuffix(upper, "[/IMG]") {
 		return true
 	}
 	// Extract URL from the message
