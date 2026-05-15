@@ -61,6 +61,9 @@ func loadConfig() (Config, bool) {
 	if cfg.ImageHeight < 3 {
 		cfg.ImageHeight = defaultImgHeight
 	}
+	if cfg.ImageHeight > 8 {
+		cfg.ImageHeight = 8
+	}
 	if cfg.ImageMode == "" {
 		cfg.ImageMode = "auto"
 	}

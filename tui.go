@@ -813,8 +813,8 @@ func (m *model) renderMessages() string {
 
 		if msg.Reply != nil {
 			replyText := cleanMessage(msg.Reply.MessageRaw, msg.Reply.Message)
-			if replyText == "" {
-				replyText = "[изображение]"
+			if replyText == "" || replyText == "[изображение]" {
+				replyText = "📷 изображение"
 			}
 			replyPrefix := "  " + replyStyle.Render("╭ ") + replyNameStyle.Render(msg.Reply.User.Username) + replyStyle.Render(": ")
 			replyIndent := 2 + 2 + len([]rune(msg.Reply.User.Username)) + 2 // "  ╭ " + name + ": "
@@ -860,21 +860,26 @@ func (m *model) renderMessages() string {
 						indent:   indent,
 					})
 
-					// Header line: time + username + url label
-					shortURL := url
-					if maxD := artWidth; len([]rune(shortURL)) > maxD && maxD > 1 {
-						shortURL = string([]rune(shortURL)[:maxD-1]) + "…"
-					}
+					// Header line: time + username + compact marker (no URL)
 					sb.WriteString(fmt.Sprintf("%s%s %s  %s\n",
-						prefix, timeStr, nameStr, imgStyle.Render(shortURL)))
+						prefix, timeStr, nameStr, imgStyle.Render("📷")))
 
-					// Art lines for inline backends, placeholder box otherwise
+					// Art lines for inline backends, empty space for ueberzug overlay
 					var artLines []string
 					if m.imgRenderer.backend == ImgBackendChafa || m.imgRenderer.backend == ImgBackendKitty {
 						artLines = m.imgRenderer.GetRendered(url, artWidth)
 					}
 					if artLines == nil {
-						artLines = m.imgRenderer.Placeholder(url, artWidth)
+						if m.imgRenderer.backend == ImgBackendUeberzug {
+							// Empty space — ueberzug renders pixels on top
+							emptyLine := strings.Repeat(" ", artWidth)
+							artLines = make([]string, m.imgRenderer.imgH)
+							for i := range artLines {
+								artLines[i] = emptyLine
+							}
+						} else {
+							artLines = m.imgRenderer.Placeholder(url, artWidth)
+						}
 					}
 					for _, l := range artLines {
 						sb.WriteString(indentStr + l + "\n")

@@ -263,6 +263,10 @@ func cleanBBCode(s string) string {
 }
 
 func cleanMessage(raw string, html string) string {
+	// Pure image message — return marker instead of URL
+	if isImageMessage(raw) {
+		return "[изображение]"
+	}
 	text := raw
 	if text == "" {
 		text = stripHTML(html)
