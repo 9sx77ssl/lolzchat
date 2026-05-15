@@ -466,11 +466,11 @@ func (m model) msgLineCount(msg ChatMessage) int {
 		n++
 	}
 	if isImageMessage(msg.MessageRaw) {
-		imgH := 0
 		if m.imgRenderer != nil && m.imgRenderer.backend != ImgBackendNone {
-			imgH = m.imgRenderer.imgH + 2 // +2 for border top/bottom
+			imgH := m.imgRenderer.imgH + 2 // +2 for border top/bottom
+			return n + 1 + imgH // header line + bordered art lines
 		}
-		return n + 1 + imgH // header line + bordered art lines
+		return n + 1 // just the marker line
 	}
 	text := cleanMessage(msg.MessageRaw, msg.Message)
 	indent := 2 + 5 + 1 + len([]rune(msg.User.Username)) + 2
@@ -889,20 +889,9 @@ func (m *model) renderMessages() string {
 						sb.WriteString(indentStr + l + "\n")
 					}
 				} else {
-					// Fallback: show URL as styled text (no image renderer)
-					urlAvail := m.viewport.Width - indent
-					if urlAvail < 10 {
-						urlAvail = 10
-					}
-					urlWrapped := wrapText(url, urlAvail)
-					for ui, ul := range urlWrapped {
-						if ui == 0 {
-							sb.WriteString(fmt.Sprintf("%s%s %s  %s", prefix, timeStr, nameStr, imgStyle.Render(ul)))
-						} else {
-							sb.WriteString(indentStr + imgStyle.Render(ul))
-						}
-						sb.WriteString("\n")
-					}
+					// No renderer — clean marker only, no URL spam
+					sb.WriteString(fmt.Sprintf("%s%s %s  %s\n",
+						prefix, timeStr, nameStr, imgStyle.Render("📷 изображение")))
 				}
 			}
 			currentLine += m.msgLineCount(msg)

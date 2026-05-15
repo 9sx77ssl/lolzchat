@@ -76,6 +76,6 @@ func saveConfig(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	header := []byte("# Lolzchat TUI Configuration\n# Get your token from https://lolz.live/account/api\n#\n# simple_mode: false  — цветные ники с детектом групп, уников, радугой и т.д.\n# simple_mode: true   — все ники красные, только вы зеленым (как в старой версии)\n#\n# image_mode: auto      — авто-определение (kitty > ueberzug > chafa > none)\n#             kitty     — kitty graphics protocol (нативно в Kitty/WezTerm)\n#             ueberzug  — Überzug++ пиксельный оверлей (Alacritty, foot и др.)\n#             chafa     — ANSI block-art (работает везде где есть chafa)\n#             none      — ОТКЛЮЧИТЬ картинки, показывать только ссылку\n# image_height: 5       — высота изображения в строках терминала (3-20)\n\n")
+	header := []byte("# Lolzchat TUI Configuration\n# Get your token from https://lolz.live/account/api\n#\n# simple_mode: false  — цветные ники с детектом групп, уников, радугой и т.д.\n# simple_mode: true   — все ники красные, только вы зеленым (как в старой версии)\n#\n# image_mode: auto      — по умолчанию показывает 📷 маркер (без рендера)\n#             chafa     — ANSI block-art в рамке (нужен chafa)\n#             kitty     — kitty graphics protocol (Kitty/WezTerm + chafa)\n#             ueberzug  — Überzug++ пиксельный оверлей (явный opt-in)\n#             none      — то же что auto, просто маркер без URL\n# image_height: 5       — высота изображения в строках терминала (3-8)\n\n")
 	return os.WriteFile(configPath(), append(header, data...), 0600)
 }

@@ -88,14 +88,8 @@ func (ir *ImageRenderer) detectBackend(mode string) ImgBackend {
 		}
 		return ImgBackendNone
 	}
-	// auto-detect: chafa (inline, bordered) > kitty > none
-	// ueberzug is only used if explicitly set (overlays can't be bordered)
-	if _, e := exec.LookPath("chafa"); e == nil {
-		if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("TERM") == "xterm-kitty" {
-			return ImgBackendKitty
-		}
-		return ImgBackendChafa
-	}
+	// auto = none (safest, no rendering artifacts)
+	// chafa/kitty/ueberzug are explicit opt-in via config
 	return ImgBackendNone
 }
 

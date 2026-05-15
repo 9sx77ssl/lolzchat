@@ -241,6 +241,8 @@ var (
 	bbTooltipEndRe = regexp.MustCompile(`\[/tooltip\]`)
 	bbImgRe        = regexp.MustCompile(`\[IMG\](.*?)\[/IMG\]`)
 	bbGenericRe    = regexp.MustCompile(`\[/?[A-Za-z]+(?:=[^\]]*)?]`)
+	// Bare image URL regex — matches standalone URLs ending with image extensions
+	bareImageRe = regexp.MustCompile(`(?i)^https?://[^\s]+\.(jpe?g|png|gif|webp|bmp|svg|tiff?|ico|avif|heic)(\?[^\s]*)?$`)
 )
 
 func stripHTML(s string) string {
@@ -282,13 +284,27 @@ func cleanMessage(raw string, html string) string {
 
 func isImageMessage(raw string) bool {
 	trimmed := strings.TrimSpace(raw)
-	return strings.HasPrefix(trimmed, "[IMG]") && strings.HasSuffix(trimmed, "[/IMG]")
+	// BB-code image
+	if strings.HasPrefix(trimmed, "[IMG]") && strings.HasSuffix(trimmed, "[/IMG]") {
+		return true
+	}
+	// Bare image URL (entire message is just a URL to an image)
+	if bareImageRe.MatchString(trimmed) {
+		return true
+	}
+	return false
 }
 
 func extractImageURL(raw string) string {
+	// Try BB-code first
 	matches := bbImgRe.FindStringSubmatch(raw)
 	if len(matches) > 1 {
 		return strings.TrimSpace(matches[1])
+	}
+	// Try bare URL
+	trimmed := strings.TrimSpace(raw)
+	if bareImageRe.MatchString(trimmed) {
+		return trimmed
 	}
 	return ""
 }
