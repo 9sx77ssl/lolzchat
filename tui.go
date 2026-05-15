@@ -248,6 +248,7 @@ type messagesMsg []ChatMessage
 type errorMsg struct{ err error }
 type sentMsg struct{}
 type editedMsg struct{}
+type imageReadyMsg struct{ url string }
 
 func (e errorMsg) Error() string { return e.err.Error() }
 
@@ -286,6 +287,10 @@ type model struct {
 	replyMsgID   int
 	replyPreview string
 	selectIdx    int
+
+	imgRenderer  *ImageRenderer
+	ueberzug     *UeberzugManager
+	imgPositions []imgViewPos
 }
 
 func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, roomID int, roomTitle string) model {
@@ -296,6 +301,8 @@ func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, r
 	ti.Width = 60
 
 	vp := viewport.New(80, 20)
+
+	ir, uz := initRenderer(cfg.ImageMode, cfg.ImageHeight)
 
 	return model{
 		cfg:        cfg,
@@ -310,6 +317,10 @@ func initialModel(cfg Config, api *APIClient, myUserID int, myUsername string, r
 		autoScroll: true,
 		mode:       modeNormal,
 		selectIdx:  -1,
+
+		imgRenderer:  ir,
+		ueberzug:     uz,
+		imgPositions: make([]imgViewPos, 0, 8),
 	}
 }
 
@@ -455,7 +466,11 @@ func (m model) msgLineCount(msg ChatMessage) int {
 		n++
 	}
 	if isImageMessage(msg.MessageRaw) {
-		return n + 1
+		imgH := 0
+		if m.imgRenderer != nil && m.imgRenderer.backend != ImgBackendNone {
+			imgH = m.imgRenderer.imgH
+		}
+		return n + 1 + imgH // header line + art/placeholder lines
 	}
 	text := cleanMessage(msg.MessageRaw, msg.Message)
 	indent := 2 + 5 + 1 + len([]rune(msg.User.Username)) + 2
@@ -488,6 +503,7 @@ func (m *model) scrollToSelected() {
 	} else if line >= m.viewport.YOffset+vpH {
 		m.viewport.YOffset = line - vpH + 1
 	}
+	m.updateImageOverlays()
 }
 
 func (m *model) findLastMyMessage() (int, string) {
@@ -522,6 +538,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			m.doCleanup()
 			return m, tea.Quit
 		case "esc":
 			if m.mode != modeNormal {
@@ -535,7 +552,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.Focus()
 				m.recalcViewport()
 				m.viewport.SetContent(m.renderMessages())
+				m.updateImageOverlays()
 			} else {
+				m.doCleanup()
 				return m, tea.Quit
 			}
 		case "enter":
@@ -551,6 +570,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input.Focus()
 					m.recalcViewport()
 					m.viewport.SetContent(m.renderMessages())
+					m.updateImageOverlays()
 				}
 			} else {
 				text := strings.TrimSpace(m.input.Value())
@@ -585,6 +605,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.recalcViewport()
 				m.viewport.SetContent(m.renderMessages())
 				m.viewport.GotoBottom()
+				m.updateImageOverlays()
 			}
 		case "up":
 			passToInput = false
@@ -597,6 +618,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.autoScroll = false
 				m.viewport.LineUp(1)
+				m.updateImageOverlays()
 			}
 		case "down":
 			passToInput = false
@@ -611,17 +633,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.viewport.AtBottom() {
 					m.autoScroll = true
 				}
+				m.updateImageOverlays()
 			}
 		case "pgup":
 			passToInput = false
 			m.autoScroll = false
 			m.viewport.HalfViewUp()
+			m.updateImageOverlays()
 		case "pgdown":
 			passToInput = false
 			m.viewport.HalfViewDown()
 			if m.viewport.AtBottom() {
 				m.autoScroll = true
 			}
+			m.updateImageOverlays()
 		case "ctrl+e":
 			if m.mode == modeNormal {
 				msgID, text := m.findLastMyMessage()
@@ -650,7 +675,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.recalcViewport()
+		if m.imgRenderer != nil {
+			m.imgRenderer.InvalidateRenderCache()
+			cmds = append(cmds, m.queuePendingImages()...)
+		}
 		m.viewport.SetContent(m.renderMessages())
+		m.updateImageOverlays()
 
 	case tickMsg:
 		cmds = append(cmds, m.fetchMessages())
@@ -662,6 +692,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = ""
 		newMsgs := []ChatMessage(msg)
 		m.mergeMessages(newMsgs)
+		cmds = append(cmds, m.queuePendingImages()...)
 		if m.mode == modeSelect {
 			savedOffset := m.viewport.YOffset
 			m.viewport.SetContent(m.renderMessages())
@@ -673,6 +704,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 			}
 		}
+		m.updateImageOverlays()
+
+	case imageReadyMsg:
+		m.viewport.SetContent(m.renderMessages())
+		if m.autoScroll {
+			m.viewport.GotoBottom()
+		}
+		m.updateImageOverlays()
 
 	case sentMsg:
 		m.sending = false
@@ -727,7 +766,10 @@ func (m *model) mergeMessages(incoming []ChatMessage) {
 	m.msgCount = len(m.messages)
 }
 
-func (m model) renderMessages() string {
+func (m *model) renderMessages() string {
+	// Reset image position tracking
+	m.imgPositions = m.imgPositions[:0]
+
 	if len(m.messages) == 0 {
 		return lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#444466")).
@@ -735,6 +777,7 @@ func (m model) renderMessages() string {
 	}
 
 	var sb strings.Builder
+	currentLine := 0
 
 	for idx, msg := range m.messages {
 		selected := m.mode == modeSelect && idx == m.selectIdx
@@ -749,6 +792,7 @@ func (m model) renderMessages() string {
 		if msg.IsDeleted {
 			sb.WriteString(prefix + deletedStyle.Render("[удалено]"))
 			sb.WriteString("\n")
+			currentLine++
 			continue
 		}
 
@@ -784,22 +828,65 @@ func (m model) renderMessages() string {
 		if isImageMessage(msg.MessageRaw) {
 			url := extractImageURL(msg.MessageRaw)
 			if url != "" {
-				urlAvail := m.viewport.Width - indent
-				if urlAvail < 10 {
-					urlAvail = 10
+				artWidth := m.viewport.Width - indent
+				if artWidth < 10 {
+					artWidth = 10
 				}
 				indentStr := strings.Repeat(" ", indent)
-				urlWrapped := wrapText(url, urlAvail)
-				for ui, ul := range urlWrapped {
-					if ui == 0 {
-						sb.WriteString(fmt.Sprintf("%s%s %s  %s", prefix, timeStr, nameStr, imgStyle.Render(ul)))
-					} else {
-						sb.WriteString(indentStr + imgStyle.Render(ul))
+				useRenderer := m.imgRenderer != nil && m.imgRenderer.backend != ImgBackendNone
+
+				if useRenderer {
+					// Record where the art block starts in the full viewport content
+					replyOff := 0
+					if msg.Reply != nil {
+						replyOff = 1
 					}
-					sb.WriteString("\n")
+					m.imgPositions = append(m.imgPositions, imgViewPos{
+						msgID:    msg.MessageID,
+						url:      url,
+						vpLine:   currentLine + replyOff + 1, // +1 for header line
+						artWidth: artWidth,
+						indent:   indent,
+					})
+
+					// Header line: time + username + url label
+					shortURL := url
+					if maxD := artWidth; len([]rune(shortURL)) > maxD && maxD > 1 {
+						shortURL = string([]rune(shortURL)[:maxD-1]) + "…"
+					}
+					sb.WriteString(fmt.Sprintf("%s%s %s  %s\n",
+						prefix, timeStr, nameStr, imgStyle.Render(shortURL)))
+
+					// Art lines for inline backends, placeholder box otherwise
+					var artLines []string
+					if m.imgRenderer.backend == ImgBackendChafa || m.imgRenderer.backend == ImgBackendKitty {
+						artLines = m.imgRenderer.GetRendered(url, artWidth)
+					}
+					if artLines == nil {
+						artLines = m.imgRenderer.Placeholder(url, artWidth)
+					}
+					for _, l := range artLines {
+						sb.WriteString(indentStr + l + "\n")
+					}
+				} else {
+					// Fallback: show URL as styled text (no image renderer)
+					urlAvail := m.viewport.Width - indent
+					if urlAvail < 10 {
+						urlAvail = 10
+					}
+					urlWrapped := wrapText(url, urlAvail)
+					for ui, ul := range urlWrapped {
+						if ui == 0 {
+							sb.WriteString(fmt.Sprintf("%s%s %s  %s", prefix, timeStr, nameStr, imgStyle.Render(ul)))
+						} else {
+							sb.WriteString(indentStr + imgStyle.Render(ul))
+						}
+						sb.WriteString("\n")
+					}
 				}
-				continue
 			}
+			currentLine += m.msgLineCount(msg)
+			continue
 		}
 
 		text := cleanMessage(msg.MessageRaw, msg.Message)
@@ -835,9 +922,132 @@ func (m model) renderMessages() string {
 				sb.WriteString("\n")
 			}
 		}
+		currentLine += m.msgLineCount(msg)
 	}
 
 	return sb.String()
+}
+
+// ── Image support helpers ─────────────────────────────────────────────────────
+
+// queueImageFetch returns a Cmd that downloads (and renders for inline backends)
+// a single image URL. Returns nil if the image is already ready.
+func (m *model) queueImageFetch(url string, artWidth int) tea.Cmd {
+	if m.imgRenderer == nil || m.imgRenderer.backend == ImgBackendNone {
+		return nil
+	}
+	if m.imgRenderer.backend == ImgBackendUeberzug {
+		if m.imgRenderer.GetDownloaded(url) != "" {
+			return nil
+		}
+		ir := m.imgRenderer
+		return func() tea.Msg {
+			ir.Download(url) //nolint
+			return imageReadyMsg{url: url}
+		}
+	}
+	// Inline backends: download + render with chafa
+	if m.imgRenderer.GetRendered(url, artWidth) != nil {
+		return nil
+	}
+	ir := m.imgRenderer
+	return func() tea.Msg {
+		localPath, err := ir.Download(url)
+		if err != nil {
+			return nil
+		}
+		lines, err := ir.RenderInline(localPath, artWidth)
+		if err != nil {
+			return nil
+		}
+		ir.SetRendered(url, artWidth, lines)
+		return imageReadyMsg{url: url}
+	}
+}
+
+// queuePendingImages queues fetch Cmds for all image messages not yet loaded.
+func (m *model) queuePendingImages() []tea.Cmd {
+	if m.imgRenderer == nil || m.imgRenderer.backend == ImgBackendNone {
+		return nil
+	}
+	w := m.viewport.Width
+	if w <= 0 {
+		w = 80
+	}
+	var cmds []tea.Cmd
+	seen := make(map[string]bool)
+	for _, msg := range m.messages {
+		if msg.IsDeleted || !isImageMessage(msg.MessageRaw) {
+			continue
+		}
+		url := extractImageURL(msg.MessageRaw)
+		if url == "" || seen[url] {
+			continue
+		}
+		seen[url] = true
+		indent := 2 + 5 + 1 + len([]rune(msg.User.Username)) + 2
+		artWidth := w - indent
+		if artWidth < 10 {
+			artWidth = 10
+		}
+		if cmd := m.queueImageFetch(url, artWidth); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return cmds
+}
+
+// updateImageOverlays sends draw/clear commands to Überzug++ for currently
+// visible images. No-op for non-ueberzug backends.
+func (m *model) updateImageOverlays() {
+	if m.imgRenderer == nil || m.imgRenderer.backend != ImgBackendUeberzug || m.ueberzug == nil {
+		return
+	}
+	m.ueberzug.clearAll()
+
+	vpY := m.viewport.YOffset
+	vpH := m.viewport.Height
+	imgH := m.imgRenderer.imgH
+	const headerRows = 1 // one row for the top header bar
+
+	for i, pos := range m.imgPositions {
+		screenLine := pos.vpLine - vpY
+		// Skip images that start below the viewport or fully above it
+		if screenLine >= vpH || screenLine+imgH <= 0 {
+			continue
+		}
+		localPath := m.imgRenderer.GetDownloaded(pos.url)
+		if localPath == "" {
+			continue // not yet downloaded
+		}
+		// Terminal row where the art starts (0-indexed from top of terminal)
+		termRow := headerRows + screenLine
+		if termRow < headerRows {
+			termRow = headerRows
+		}
+		// Clip height to viewport bottom
+		dispH := imgH
+		if screenLine+imgH > vpH {
+			dispH = vpH - screenLine
+		}
+		if dispH <= 0 {
+			continue
+		}
+		id := fmt.Sprintf("lolzimg_%d", i)
+		m.ueberzug.draw(id, localPath, pos.indent, termRow, pos.artWidth, dispH)
+	}
+}
+
+// doCleanup stops Überzug++ and removes temp image files.
+func (m *model) doCleanup() {
+	if m.ueberzug != nil {
+		m.ueberzug.clearAll()
+		m.ueberzug.stop()
+		m.ueberzug = nil
+	}
+	if m.imgRenderer != nil {
+		m.imgRenderer.Cleanup()
+	}
 }
 
 func (m model) View() string {
