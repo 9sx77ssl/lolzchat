@@ -691,20 +691,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastPoll = time.Now()
 		m.err = ""
 		newMsgs := []ChatMessage(msg)
-		m.mergeMessages(newMsgs)
-		cmds = append(cmds, m.queuePendingImages()...)
-		if m.mode == modeSelect {
-			savedOffset := m.viewport.YOffset
-			m.viewport.SetContent(m.renderMessages())
-			m.viewport.YOffset = savedOffset
-			m.scrollToSelected()
-		} else {
-			m.viewport.SetContent(m.renderMessages())
-			if m.autoScroll {
-				m.viewport.GotoBottom()
+		changed := m.mergeMessages(newMsgs)
+		if changed {
+			cmds = append(cmds, m.queuePendingImages()...)
+			if m.mode == modeSelect {
+				savedOffset := m.viewport.YOffset
+				m.viewport.SetContent(m.renderMessages())
+				m.viewport.YOffset = savedOffset
+				m.scrollToSelected()
+			} else {
+				m.viewport.SetContent(m.renderMessages())
+				if m.autoScroll {
+					m.viewport.GotoBottom()
+				}
 			}
+			m.updateImageOverlays()
 		}
-		m.updateImageOverlays()
 
 	case imageReadyMsg:
 		m.viewport.SetContent(m.renderMessages())
@@ -735,35 +737,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *model) mergeMessages(incoming []ChatMessage) {
+func (m *model) mergeMessages(incoming []ChatMessage) bool {
+	changed := false
 	for _, msg := range incoming {
 		if idx, exists := m.msgIndex[msg.MessageID]; exists {
-			m.messages[idx] = msg
+			old := m.messages[idx]
+			if old.Message != msg.Message || old.IsDeleted != msg.IsDeleted || old.MessageRaw != msg.MessageRaw {
+				m.messages[idx] = msg
+				changed = true
+			}
 		} else {
 			m.msgIndex[msg.MessageID] = len(m.messages)
 			m.messages = append(m.messages, msg)
+			changed = true
 		}
 	}
 
-	sort.Slice(m.messages, func(i, j int) bool {
-		return m.messages[i].MessageID < m.messages[j].MessageID
-	})
+	if changed {
+		sort.Slice(m.messages, func(i, j int) bool {
+			return m.messages[i].MessageID < m.messages[j].MessageID
+		})
 
-	for i, msg := range m.messages {
-		m.msgIndex[msg.MessageID] = i
-	}
-
-	if len(m.messages) > m.cfg.MaxHistory {
-		excess := len(m.messages) - m.cfg.MaxHistory
-		for _, msg := range m.messages[:excess] {
-			delete(m.msgIndex, msg.MessageID)
-		}
-		m.messages = m.messages[excess:]
 		for i, msg := range m.messages {
 			m.msgIndex[msg.MessageID] = i
 		}
+
+		if len(m.messages) > m.cfg.MaxHistory {
+			excess := len(m.messages) - m.cfg.MaxHistory
+			for _, msg := range m.messages[:excess] {
+				delete(m.msgIndex, msg.MessageID)
+			}
+			m.messages = m.messages[excess:]
+			for i, msg := range m.messages {
+				m.msgIndex[msg.MessageID] = i
+			}
+		}
+		m.msgCount = len(m.messages)
 	}
-	m.msgCount = len(m.messages)
+	return changed
 }
 
 func (m *model) renderMessages() string {
@@ -1003,12 +1014,14 @@ func (m *model) updateImageOverlays() {
 	if m.imgRenderer == nil || m.imgRenderer.backend != ImgBackendUeberzug || m.ueberzug == nil {
 		return
 	}
-	m.ueberzug.clearAll()
 
 	vpY := m.viewport.YOffset
 	vpH := m.viewport.Height
 	imgH := m.imgRenderer.imgH
 	const headerRows = 1 // one row for the top header bar
+
+	// Build set of overlays that should be visible now
+	wantVisible := make(map[string]bool)
 
 	for i, pos := range m.imgPositions {
 		screenLine := pos.vpLine - vpY
@@ -1034,8 +1047,12 @@ func (m *model) updateImageOverlays() {
 			continue
 		}
 		id := fmt.Sprintf("lolzimg_%d", i)
-		m.ueberzug.draw(id, localPath, pos.indent, termRow, pos.artWidth, dispH)
+		wantVisible[id] = true
+		m.ueberzug.drawIfChanged(id, localPath, pos.indent, termRow, pos.artWidth, dispH)
 	}
+
+	// Remove overlays that are no longer visible
+	m.ueberzug.removeExcept(wantVisible)
 }
 
 // doCleanup stops Überzug++ and removes temp image files.

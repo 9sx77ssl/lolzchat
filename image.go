@@ -23,7 +23,7 @@ const (
 	ImgBackendUeberzug                   // Überzug++ pixel overlay
 )
 
-const defaultImgHeight = 8
+const defaultImgHeight = 5
 
 // imgViewPos tracks where image art appears inside the viewport content string.
 type imgViewPos struct {
@@ -253,12 +253,18 @@ type ueberzugPayload struct {
 	MaxHeight  int    `json:"max_height,omitempty"`
 }
 
+type overlayState struct {
+	path string
+	x, y int
+	w, h int
+}
+
 // UeberzugManager wraps an ueberzugpp layer subprocess and sends draw commands via its stdin.
 type UeberzugManager struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	mu     sync.Mutex
-	active map[string]bool
+	active map[string]overlayState
 }
 
 func newUeberzugManager() (*UeberzugManager, error) {
@@ -273,7 +279,7 @@ func newUeberzugManager() (*UeberzugManager, error) {
 	return &UeberzugManager{
 		cmd:    cmd,
 		stdin:  stdin,
-		active: make(map[string]bool),
+		active: make(map[string]overlayState),
 	}, nil
 }
 
@@ -286,7 +292,18 @@ func (u *UeberzugManager) draw(id, path string, x, y, w, h int) {
 	}
 	data, _ := json.Marshal(p)
 	fmt.Fprintf(u.stdin, "%s\n", data)
-	u.active[id] = true
+	u.active[id] = overlayState{path: path, x: x, y: y, w: w, h: h}
+}
+
+// drawIfChanged only sends a draw command if the overlay position/size actually changed.
+func (u *UeberzugManager) drawIfChanged(id, path string, x, y, w, h int) {
+	u.mu.Lock()
+	prev, exists := u.active[id]
+	u.mu.Unlock()
+	if exists && prev.path == path && prev.x == x && prev.y == y && prev.w == w && prev.h == h {
+		return // nothing changed
+	}
+	u.draw(id, path, x, y, w, h)
 }
 
 func (u *UeberzugManager) remove(id string) {
@@ -296,6 +313,21 @@ func (u *UeberzugManager) remove(id string) {
 	data, _ := json.Marshal(p)
 	fmt.Fprintf(u.stdin, "%s\n", data)
 	delete(u.active, id)
+}
+
+// removeExcept removes all overlays whose id is NOT in the keep set.
+func (u *UeberzugManager) removeExcept(keep map[string]bool) {
+	u.mu.Lock()
+	ids := make([]string, 0, len(u.active))
+	for id := range u.active {
+		if !keep[id] {
+			ids = append(ids, id)
+		}
+	}
+	u.mu.Unlock()
+	for _, id := range ids {
+		u.remove(id)
+	}
 }
 
 func (u *UeberzugManager) clearAll() {
