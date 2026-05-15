@@ -890,7 +890,7 @@ func (m *model) renderMessages() string {
 					}
 				} else {
 					// No renderer — clickable hyperlink marker (Ctrl+Click to open)
-					hyperlink := fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\",
+					hyperlink := fmt.Sprintf("\x1b]8;;%s\x07%s\x1b]8;;\x07",
 						url, imgStyle.Render("📷 изображение"))
 					sb.WriteString(fmt.Sprintf("%s%s %s  %s\n",
 						prefix, timeStr, nameStr, hyperlink))

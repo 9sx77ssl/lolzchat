@@ -240,8 +240,9 @@ var (
 	bbTooltipRe    = regexp.MustCompile(`\[tooltip=\d+\]`)
 	bbTooltipEndRe = regexp.MustCompile(`\[/tooltip\]`)
 	bbImgRe        = regexp.MustCompile(`\[IMG\](.*?)\[/IMG\]`)
-	bbURLRe        = regexp.MustCompile(`(?i)\[URL(?:=[^\]]*)?\](.*?)\[/URL\]`)
-	bbGenericRe    = regexp.MustCompile(`\[/?[A-Za-z]+(?:=[^\]]*)?]`)
+	bbURLRe        = regexp.MustCompile(`(?i)\[URL[^\]]*\](.*?)\[/URL\]`)
+	bbURLAttrRe    = regexp.MustCompile(`(?i)\[URL=([^\]\s"']+)`)
+	bbGenericRe    = regexp.MustCompile(`\[/?[A-Za-z]+[^\]]*\]`)
 	// Bare image URL — ends with image extension
 	imgExtRe = regexp.MustCompile(`(?i)\.(jpe?g|png|gif|webp|bmp|svg|tiff?|ico|avif|heic)(\?[^\s]*)?$`)
 	// Known image CDN domains — URL from these is always an image
@@ -303,7 +304,14 @@ func extractRawURL(raw string) string {
 	if m := bbImgRe.FindStringSubmatch(trimmed); len(m) > 1 {
 		return strings.TrimSpace(m[1])
 	}
-	// [URL=...]text[/URL] or [URL]url[/URL]
+	// [URL=url]...[/URL] — extract from attribute
+	if m := bbURLAttrRe.FindStringSubmatch(trimmed); len(m) > 1 {
+		attr := strings.TrimSpace(m[1])
+		if strings.HasPrefix(attr, "http") {
+			return attr
+		}
+	}
+	// [URL...]content[/URL] — extract inner text
 	if m := bbURLRe.FindStringSubmatch(trimmed); len(m) > 1 {
 		inner := strings.TrimSpace(m[1])
 		if strings.HasPrefix(inner, "http") {
@@ -343,26 +351,21 @@ func isImageMessage(raw string) bool {
 	if strings.HasPrefix(trimmed, "[IMG]") && strings.HasSuffix(trimmed, "[/IMG]") {
 		return true
 	}
-	// Message is just a single URL that looks like an image
+	// Extract URL from the message
 	url := extractRawURL(raw)
-	if url == "" {
+	if url == "" || !looksLikeImageURL(url) {
 		return false
 	}
-	// Make sure the entire message content IS the URL (not a URL within text)
-	stripped := bbURLRe.ReplaceAllString(trimmed, "$1")
-	stripped = bbImgRe.ReplaceAllString(stripped, "$1")
-	stripped = strings.TrimSpace(stripped)
-	// If after stripping, the content is just the URL — it's an image message
-	if stripped == url || trimmed == url {
-		return looksLikeImageURL(url)
+	// Strip all BB-code tags and check if what remains is just the URL
+	noTags := bbGenericRe.ReplaceAllString(trimmed, "")
+	noTags = strings.TrimSpace(noTags)
+	// If content after stripping tags is empty, just the URL, or matches the URL
+	if noTags == "" || noTags == url || trimmed == url {
+		return true
 	}
-	// Also handle [URL=X]X[/URL] where the visible text equals the URL
-	if looksLikeImageURL(url) {
-		noTags := bbGenericRe.ReplaceAllString(trimmed, "")
-		noTags = strings.TrimSpace(noTags)
-		if noTags == url {
-			return true
-		}
+	// Check if the non-tag content equals the URL (handles [URL=X]X[/URL])
+	if noTags == url || strings.TrimSpace(strings.ReplaceAll(noTags, url, "")) == "" {
+		return true
 	}
 	return false
 }
